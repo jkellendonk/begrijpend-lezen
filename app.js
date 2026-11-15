@@ -113,6 +113,12 @@
     woordVerbanden.get(w).push(v.id);
   }));
   const WOORDEN = [...woordVerbanden.keys()];
+  // 'Losse woorden': zonder woorden die alleen in een zin een eenduidig verband hebben
+  const LOSSE_WOORDEN = WOORDEN.filter(w => !window.LOS_UITGESLOTEN.includes(w));
+  const ZINNEN = window.ZINNEN;
+  const VORMEN = window.SIGNAAL_VORMEN || {};
+  // schrijfwijze in de zin -> schrijfwijze in VERBANDEN (bijv. "Ten eerste" -> "ten eerste, ten tweede")
+  function canon(woord) { const l = woord.toLowerCase(); return VORMEN[l] || l; }
 
   function blokkade(verbandIds) {
     const s = new Set();
@@ -120,97 +126,144 @@
     return s;
   }
 
+  // goed verband + 3 foute verbanden (nooit hetzelfde of een buur-verband)
+  function verbandOpties(goedId, ookUitsluiten) {
+    const blok = blokkade([goedId, ...(ookUitsluiten || [])]);
+    const fout = shuffle(VERBANDEN.filter(v => !blok.has(v.id))).slice(0, 3).map(v => v.label);
+    return [verbandById[goedId].label, ...fout];
+  }
+
   function verbandUitleg(woord, verbandId) {
     const v = verbandById[verbandId];
     return `${cap(woord)} = ${v.label}: ${lc(v.uitleg)}`;
   }
 
+  function woordHint(woord) {
+    const u = window.SIGNAAL_UITLEG[canon(woord)];
+    return u ? `"${woord}" = ${u}` : null;
+  }
+
+  // zin met het signaalwoord vetgedrukt (als veilige HTML)
+  function zinMetWoordHtml(z) {
+    const [voor, na] = z.tekst.split("___");
+    return `${esc(voor)}<b class="sw">${esc(z.woord)}</b>${esc(na)}`;
+  }
+
   const SIGNAAL_VRAGEN = {
-    verband: w => {
-      const ids = woordVerbanden.get(w);
-      const blok = blokkade(ids);
-      const goed = verbandById[ids[0]].label;
-      const fout = shuffle(VERBANDEN.filter(v => !blok.has(v.id))).slice(0, 3).map(v => v.label);
+    // ---- zinnen ----
+    zinVerband: z => ({
+      label: "Welk verband geeft het vetgedrukte woord hier aan?",
+      prompt: z.tekst.replace("___", z.woord), promptHtml: zinMetWoordHtml(z), longPrompt: true,
+      correct: verbandById[z.verband].label,
+      // andere verbanden van hetzelfde woord (bijv. 'want') nooit als fout antwoord tonen
+      options: verbandOpties(z.verband, woordVerbanden.get(canon(z.woord))),
+      hint: woordHint(z.woord),
+      explain: verbandUitleg(z.woord, z.verband),
+      zinUitleg: z.uitleg
+    }),
+    zinWoord: z => ({
+      label: "Welk signaalwoord past op de puntjes?",
+      prompt: z.tekst, longPrompt: true, gap: true,
+      correct: z.woord, options: [z.woord, ...z.fout],
+      hint: `Welk verband zit er tussen de zinsdelen? ${verbandById[z.verband].uitleg}`,
+      explain: verbandUitleg(z.woord, z.verband),
+      zinUitleg: z.uitleg
+    }),
+    vervolg: z => {
+      const begin = z.vervolg.begin;
+      const i = begin.lastIndexOf(z.woord);
+      const beginHtml = `${esc(begin.slice(0, i))}<b class="sw">${esc(z.woord)}</b>${esc(begin.slice(i + z.woord.length))} …`;
       return {
-        label: "Welk verband geeft dit signaalwoord aan?",
-        prompt: w, correct: goed, options: [goed, ...fout],
-        hint: `"${w}" = ${window.SIGNAAL_UITLEG[w]}`,
-        explain: verbandUitleg(w, ids[0]),
-        // alle verbanden waar het woord bij hoort tellen als goed
-        alsoCorrect: ids.map(id => verbandById[id].label)
+        label: "Hoe gaat de zin verder?",
+        prompt: `${begin} …`, promptHtml: beginHtml, longPrompt: true,
+        correct: z.vervolg.goed, options: [z.vervolg.goed, ...z.vervolg.fout],
+        longAnswers: true,
+        hint: woordHint(z.woord),
+        explain: verbandUitleg(z.woord, z.verband),
+        zinUitleg: z.uitleg
       };
     },
-    woord: w => {
-      const v = verbandById[pick(woordVerbanden.get(w))];
+    // ---- losse woorden (korte opwarmer) ----
+    losVerband: w => {
+      const id = woordVerbanden.get(w)[0];
+      return {
+        label: "Welk verband geeft dit signaalwoord aan?",
+        prompt: w, correct: verbandById[id].label,
+        options: verbandOpties(id, woordVerbanden.get(w)),
+        hint: woordHint(w),
+        explain: verbandUitleg(w, id)
+      };
+    },
+    losWoord: w => {
+      const v = verbandById[woordVerbanden.get(w)[0]];
       const blok = buren[v.id];
-      const fout = shuffle(WOORDEN.filter(x => x !== w && !woordVerbanden.get(x).some(id => blok.has(id)))).slice(0, 3);
+      const fout = shuffle(LOSSE_WOORDEN.filter(x => x !== w && !woordVerbanden.get(x).some(id => blok.has(id)))).slice(0, 3);
       return {
         label: "Welk signaalwoord hoort bij dit verband?",
         prompt: cap(v.label), correct: w, options: [w, ...fout],
         hint: v.uitleg,
         explain: verbandUitleg(w, v.id)
       };
-    },
-    zinnen: z => ({
-      label: "Welk signaalwoord past op de puntjes?",
-      prompt: z.zin, longPrompt: true, gap: true,
-      correct: z.goed, options: [z.goed, ...z.fout],
-      hint: `Welk verband zit er tussen de zinsdelen? ${verbandById[z.verband].uitleg}`,
-      explain: verbandUitleg(z.goed, z.verband)
-    })
+    }
   };
 
+  function zinVraag(soort, z) {
+    const make = { "zin-verband": SIGNAAL_VRAGEN.zinVerband, "zin-woord": SIGNAAL_VRAGEN.zinWoord, "vervolg": SIGNAAL_VRAGEN.vervolg }[soort];
+    return { part: soort, ...make(z) };
+  }
+
   // ====================== onderwerpen & onderdelen ======================
+  // Elk onderdeel heeft een vaste id: die komt in het packId van de scores.
+  // Gebruik een oude id nooit opnieuw voor iets anders (oude scores: signaal::verband / woord / zinnen / alles).
   const TOPICS = {
     begrippen: {
       label: "📚 Begrippen",
       name: "Begrippen",
       parts: [
-        { id: "welk", label: "Welk begrip?", icon: "🔎", color: "var(--teal)", items: () => BEGRIPPEN, make: BEGRIP_VRAGEN.welk },
-        { id: "betekenis", label: "Wat betekent het?", icon: "📖", color: "var(--gold)", items: () => BEGRIPPEN, make: BEGRIP_VRAGEN.betekenis },
-        { id: "voorbeeld", label: "Voorbeelden", icon: "💬", color: "var(--mint)", items: () => BEGRIPPEN.filter(b => b.voorbeeld), make: BEGRIP_VRAGEN.voorbeeld }
-      ],
-      alles: () => BEGRIPPEN.map(b => {
-        const soorten = b.voorbeeld ? ["welk", "betekenis", "voorbeeld"] : ["welk", "betekenis"];
-        const soort = pick(soorten);
-        return { part: soort, ...BEGRIP_VRAGEN[soort](b) };
-      })
+        { id: "welk", label: "Welk begrip?", icon: "🔎", color: "var(--teal)",
+          build: () => BEGRIPPEN.map(b => ({ part: "welk", ...BEGRIP_VRAGEN.welk(b) })) },
+        { id: "betekenis", label: "Wat betekent het?", icon: "📖", color: "var(--gold)",
+          build: () => BEGRIPPEN.map(b => ({ part: "betekenis", ...BEGRIP_VRAGEN.betekenis(b) })) },
+        { id: "voorbeeld", label: "Voorbeelden", icon: "💬", color: "var(--mint)",
+          build: () => BEGRIPPEN.filter(b => b.voorbeeld).map(b => ({ part: "voorbeeld", ...BEGRIP_VRAGEN.voorbeeld(b) })) },
+        { id: "alles", label: "Alles", icon: "🎯",
+          build: () => BEGRIPPEN.map(b => {
+            const soort = pick(b.voorbeeld ? ["welk", "betekenis", "voorbeeld"] : ["welk", "betekenis"]);
+            return { part: soort, ...BEGRIP_VRAGEN[soort](b) };
+          }) }
+      ]
     },
     signaal: {
       label: "🔗 Signaalwoorden",
       name: "Signaalwoorden",
       parts: [
-        { id: "verband", label: "Welk verband?", icon: "🔗", color: "var(--teal)", items: () => WOORDEN, make: SIGNAAL_VRAGEN.verband },
-        { id: "woord", label: "Welk woord?", icon: "🧩", color: "var(--gold)", items: () => WOORDEN, make: SIGNAAL_VRAGEN.woord },
-        { id: "zinnen", label: "Zinnen aanvullen", icon: "💬", color: "var(--mint)", items: () => window.ZINNEN, make: SIGNAAL_VRAGEN.zinnen }
-      ],
-      alles: () => [
-        ...WOORDEN.map(w => { const s = pick(["verband", "woord"]); return { part: s, ...SIGNAAL_VRAGEN[s](w) }; }),
-        ...window.ZINNEN.map(z => ({ part: "zinnen", ...SIGNAAL_VRAGEN.zinnen(z) }))
+        { id: "zin-verband", label: "Welk verband?", icon: "🔗", color: "var(--teal)",
+          build: () => ZINNEN.map(z => zinVraag("zin-verband", z)) },
+        { id: "zin-woord", label: "Welk woord past?", icon: "🧩", color: "var(--gold)",
+          build: () => ZINNEN.map(z => zinVraag("zin-woord", z)) },
+        { id: "vervolg", label: "Wat komt er na?", icon: "➡️", color: "var(--mint)",
+          build: () => ZINNEN.filter(z => z.vervolg).map(z => zinVraag("vervolg", z)) },
+        { id: "los", label: "Losse woorden", icon: "🔤", color: "var(--coral)",
+          build: () => LOSSE_WOORDEN.map(w => ({ part: "los", ...SIGNAAL_VRAGEN[pick(["losVerband", "losWoord"])](w) })) },
+        { id: "zin-alles", label: "Alles", icon: "🎯",
+          build: () => ZINNEN.map(z => zinVraag(pick(z.vervolg ? ["zin-verband", "zin-woord", "vervolg"] : ["zin-verband", "zin-woord"]), z)) }
       ]
     }
   };
-  const ALLES_PART = { id: "alles", label: "Alles", icon: "🎯" };
 
+  function defaultPart(topicId) { const p = TOPICS[topicId].parts; return p[p.length - 1].id; }
   function partMeta(topicId, partId) {
-    if (partId === "alles") return ALLES_PART;
     return TOPICS[topicId].parts.find(p => p.id === partId);
   }
   function partCount(topicId, partId) {
-    const t = TOPICS[topicId];
-    if (partId === "alles") return t.alles().length;
-    return partMeta(topicId, partId).items().length;
+    return partMeta(topicId, partId).build().length;
   }
   function packName(topicId, partId, amount) {
     const base = `${TOPICS[topicId].name} · ${partMeta(topicId, partId).label}`;
     return amount === "alles" ? base : `${base} · ${amount}`;
   }
   function buildPack(topicId, partId, amount) {
-    const t = TOPICS[topicId];
-    let qs = partId === "alles"
-      ? t.alles()
-      : partMeta(topicId, partId).items().map(it => ({ part: partId, ...partMeta(topicId, partId).make(it) }));
-    qs = shuffle(qs);
+    let qs = shuffle(partMeta(topicId, partId).build());
     if (amount !== "alles") qs = qs.slice(0, Number(amount));
     return {
       id: `${topicId}::${partId}::${amount}`,
@@ -267,7 +320,7 @@
   // ====================== startscherm ======================
   function renderStart() {
     const t = TOPICS[app.topic];
-    const parts = [...t.parts, ALLES_PART];
+    const parts = t.parts;
     root.innerHTML = `
       ${headerHtml()}
       <div class="panel">
@@ -479,9 +532,11 @@
       if (q.explain) msg += `<div class="explain">💡 ${esc(q.explain)}</div>`;
     }
 
-    const promptHtml = q.gap
-      ? esc(q.prompt).replace("___", `<span class="gap">&nbsp;</span>`)
-      : esc(q.prompt);
+    const promptHtml = q.promptHtml
+      ? q.promptHtml
+      : q.gap
+        ? esc(q.prompt).replace("___", `<span class="gap">&nbsp;</span>`)
+        : esc(q.prompt);
 
     const choices = s.order.map((opt, i) => {
       let cls = "choice-btn";
@@ -587,10 +642,11 @@
   function withDeltas(entries) {
     const last = {};
     return [...entries].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).map(e => {
-      const prev = last[e.pack.name];
+      const key = e.packId || e.pack.name;
+      const prev = last[key];
       const deltaAcc = prev ? e.accuracy - prev.accuracy : null;
       const deltaTime = prev ? prev.timeSeconds - e.timeSeconds : null;
-      last[e.pack.name] = e;
+      last[key] = e;
       return { ...e, deltaAcc, deltaTime };
     });
   }
@@ -669,7 +725,7 @@
 
     switch (action) {
       case "sound": sound.enabled = !sound.enabled; el.textContent = sound.enabled ? "🔊" : "🔇"; break;
-      case "topic": app.topic = el.dataset.id; app.part = "alles"; renderStart(); break;
+      case "topic": app.topic = el.dataset.id; app.part = defaultPart(app.topic); renderStart(); break;
       case "part": app.part = el.dataset.id; renderStart(); break;
       case "amount": app.amount = el.dataset.id; renderStart(); break;
       case "board": stopTimers(); app.screen = "board"; render(); break;
