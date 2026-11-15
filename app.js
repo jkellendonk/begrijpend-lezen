@@ -9,6 +9,7 @@
     { id: "40", label: "40 vragen" },
     { id: "alles", label: "Alles" }
   ];
+  const HINT_DELAY_MS = 10000;
   const PRAISE = ["Goed zo!", "Top!", "Knap gedaan!", "Yes!"];
 
   // ====================== helpers ======================
@@ -122,6 +123,7 @@
       return {
         label: "Welk verband geeft dit signaalwoord aan?",
         prompt: w, correct: goed, options: [goed, ...fout],
+        hint: `"${w}" = ${window.SIGNAAL_UITLEG[w]}`,
         // alle verbanden waar het woord bij hoort tellen als goed
         alsoCorrect: ids.map(id => verbandById[id].label)
       };
@@ -132,13 +134,15 @@
       const fout = shuffle(WOORDEN.filter(x => x !== w && !woordVerbanden.get(x).some(id => blok.has(id)))).slice(0, 3);
       return {
         label: "Welk signaalwoord hoort bij dit verband?",
-        prompt: cap(v.label), correct: w, options: [w, ...fout]
+        prompt: cap(v.label), correct: w, options: [w, ...fout],
+        hint: v.uitleg
       };
     },
     zinnen: z => ({
       label: "Welk signaalwoord past op de puntjes?",
       prompt: z.zin, longPrompt: true, gap: true,
-      correct: z.goed, options: [z.goed, ...z.fout]
+      correct: z.goed, options: [z.goed, ...z.fout],
+      hint: `Welk verband zit er tussen de zinsdelen? ${verbandById[z.verband].uitleg}`
     })
   };
 
@@ -292,7 +296,7 @@
       mastered: new Set(), struggling: new Set(), attempted: new Set(),
       mistakes: 0, firstTryCorrect: 0, streak: 0, bestStreak: 0,
       milestone: false, answered: false, lastResult: null, message: "",
-      chosen: null, order: [], finished: false,
+      chosen: null, order: [], finished: false, hintShown: false, hintId: null,
       startedAt: Date.now(), seconds: 0, timerId: null, advanceId: null
     };
   }
@@ -320,6 +324,7 @@
     if (app.quiz) {
       clearInterval(app.quiz.timerId);
       clearTimeout(app.quiz.advanceId);
+      clearTimeout(app.quiz.hintId);
     }
   }
 
@@ -327,8 +332,29 @@
 
   function prepareQuestion() {
     // antwoorden elke keer opnieuw husselen, ook als de vraag terugkomt
-    app.quiz.order = shuffle(currentQuestion().options);
-    app.quiz.chosen = null;
+    const s = app.quiz, q = currentQuestion();
+    s.order = shuffle(q.options);
+    s.chosen = null;
+    s.hintShown = false;
+    clearTimeout(s.hintId);
+    // na 10 seconden zonder antwoord verschijnt de hint vanzelf
+    if (q.hint) {
+      const active = s.active;
+      s.hintId = setTimeout(() => {
+        if (app.quiz === s && app.screen === "quiz" && !s.answered && s.active === active && !s.hintShown) {
+          s.hintShown = true;
+          render();
+        }
+      }, HINT_DELAY_MS);
+    }
+  }
+
+  function toggleHint() {
+    const s = app.quiz;
+    if (!s || !currentQuestion().hint || app.dialog) return;
+    s.hintShown = !s.hintShown;
+    clearTimeout(s.hintId);
+    render();
   }
 
   function isCorrect(q, answer) {
@@ -345,6 +371,7 @@
     const first = !s.attempted.has(idx);
     s.attempted.add(idx);
     s.answered = true;
+    clearTimeout(s.hintId);
     s.chosen = answer;
 
     if (isCorrect(q, answer)) {
@@ -471,10 +498,12 @@
           ${meta ? `<div class="category-badge" style="--chip-color:${meta.color}"><span class="dot" aria-hidden="true"></span>${meta.icon} ${esc(meta.label)}</div>` : ""}
           <div class="prompt-label">${esc(q.label)}</div>
           <div class="prompt-word ${q.longPrompt ? "long" : ""}">${promptHtml}</div>
+          ${q.hint ? `<button class="hint-btn ${s.hintShown ? "active" : ""}" data-action="hint" title="Hint (H)" aria-label="Hint tonen">?</button>` : ""}
+          ${q.hint && s.hintShown ? `<div class="hint-box">💡 ${esc(q.hint)}</div>` : ""}
         </div>
       </div>
       <div class="choice-grid ${longAnswers ? "long" : ""}">${choices}</div>
-      <div class="hint">Klik op een antwoord of druk op 1, 2, 3 of 4 · Enter = verder</div>
+      <div class="hint">Klik op een antwoord of druk op 1, 2, 3 of 4 · Enter = verder${q.hint ? " · ? of H = hint" : ""}</div>
       <div class="footer">
         <div class="score"><span>Onder de knie</span> <b>${s.mastered.size} / ${pack.questions.length}</b></div>
         <button class="next-btn" data-action="next" ${s.answered ? "" : "disabled"}>${nextLabel}</button>
@@ -626,6 +655,7 @@
       case "again": startQuiz(); break;
       case "choose": choose(Number(el.dataset.index)); break;
       case "next": advance(); break;
+      case "hint": toggleHint(); break;
       case "ask-stop": app.dialog = true; render(); break;
       case "close-dialog": app.dialog = false; render(); break;
       case "stop": goMenu(); break;
@@ -639,6 +669,7 @@
         return;
       }
       if (["1", "2", "3", "4"].includes(e.key)) { choose(Number(e.key) - 1); return; }
+      if (e.key === "h" || e.key === "H" || e.key === "?") { toggleHint(); return; }
       if (e.key === "Enter" && app.quiz.answered) { e.preventDefault(); advance(); }
     } else if (app.screen === "result" && e.key === "Enter") {
       e.preventDefault();

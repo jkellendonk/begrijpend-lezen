@@ -170,3 +170,9 @@ body {
   .choice-grid { grid-template-columns: 1fr; }
   .topic-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- hint bij signaalwoorden ---------- */
+.hint-btn { position: absolute; top: 16px; right: 16px; z-index: 1; cursor: pointer; border: none; border-radius: 50%; width: 36px; height: 36px; background: #fff3; color: #fff; font-family: Nunito; font-size: 18px; font-weight: 800; transition: transform .15s, background .15s; box-shadow: 0 3px #00000026; }
+.hint-btn:hover { transform: translateY(-1px); background: #ffffff4d; }
+.hint-btn.active { background: #fff; color: var(--teal-dark); }
+.hint-box { position: relative; max-width: 470px; margin: 18px auto 0; padding: 10px 16px; background: #ffffff2e; border-radius: 14px; font-size: 15px; font-weight: 700; line-height: 1.4; animation: .3s dictFade; }
