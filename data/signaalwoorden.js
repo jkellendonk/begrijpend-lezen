@@ -19,6 +19,16 @@ window.VERBANDEN_BUREN = [
   ["samenvatting", "conclusie"]
 ];
 
+// Verbanden die in een zin vaak allebei te verdedigen zijn (bijv. "Ze kan dus niet mee": conclusie of reden?).
+// Bij 'Welk verband?' en 'Losse woorden' staan deze nooit samen als keuze. (Afleiders in de zinnen volgen alleen VERBANDEN_BUREN.)
+window.VERBANDEN_LIJKEN_OP = [
+  ["reden", "conclusie"],
+  ["oorzaak", "conclusie"],
+  ["tijd", "voorwaarde"],
+  ["tijd", "opsomming"],
+  ["toelichting", "samenvatting"]
+];
+
 // Woorden die zonder zin geen eenduidig verband hebben. Deze komen niet voor bij 'Losse woorden'
 // (wel in de zinnen, zie data/zinnen.js).
 window.LOS_UITGESLOTEN = ["met", "zo", "en", "door", "als", "ook", "vervolgens", "ten slotte", "want"];

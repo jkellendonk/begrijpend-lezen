@@ -106,6 +106,10 @@
   const buren = {}; // verband -> Set van verbanden die niet als fout antwoord naast elkaar mogen
   VERBANDEN.forEach(v => { buren[v.id] = new Set([v.id]); });
   window.VERBANDEN_BUREN.forEach(([a, b]) => { buren[a].add(b); buren[b].add(a); });
+  // bij keuzes uit verbanden (Welk verband? / Losse woorden) ook verbanden die erg op elkaar lijken weglaten
+  const keuzeBuren = {};
+  VERBANDEN.forEach(v => { keuzeBuren[v.id] = new Set(buren[v.id]); });
+  (window.VERBANDEN_LIJKEN_OP || []).forEach(([a, b]) => { keuzeBuren[a].add(b); keuzeBuren[b].add(a); });
 
   const woordVerbanden = new Map(); // woord -> [verband-ids]  (bijv. "want" hoort bij 2 verbanden)
   VERBANDEN.forEach(v => v.woorden.forEach(w => {
@@ -122,7 +126,7 @@
 
   function blokkade(verbandIds) {
     const s = new Set();
-    verbandIds.forEach(id => buren[id].forEach(x => s.add(x)));
+    verbandIds.forEach(id => keuzeBuren[id].forEach(x => s.add(x)));
     return s;
   }
 
@@ -196,7 +200,7 @@
     },
     losWoord: w => {
       const v = verbandById[woordVerbanden.get(w)[0]];
-      const blok = buren[v.id];
+      const blok = keuzeBuren[v.id];
       const fout = shuffle(LOSSE_WOORDEN.filter(x => x !== w && !woordVerbanden.get(x).some(id => blok.has(id)))).slice(0, 3);
       return {
         label: "Welk signaalwoord hoort bij dit verband?",
