@@ -26,6 +26,7 @@
     return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function lc(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
   function fmtTime(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; }
 
   // ====================== geluid (zelfde tonen als Dictee Engels) ======================
@@ -72,25 +73,30 @@
     return shuffle(BEGRIPPEN.filter(x => !verwant[b.begrip].has(x.begrip))).slice(0, 3);
   }
 
+  function begripUitleg(b) { return `${cap(b.begrip)} = ${lc(b.uitleg)}`; }
+
   const BEGRIP_VRAGEN = {
     betekenis: b => ({
       label: "Wat betekent dit begrip?",
       prompt: cap(b.begrip),
       correct: b.uitleg,
       options: [b.uitleg, ...begripDistractors(b).map(x => x.uitleg)],
-      longAnswers: true
+      longAnswers: true,
+      explain: begripUitleg(b)
     }),
     welk: b => ({
       label: "Welk begrip past bij deze uitleg?",
       prompt: b.uitleg, longPrompt: true,
       correct: b.begrip,
-      options: [b.begrip, ...begripDistractors(b).map(x => x.begrip)]
+      options: [b.begrip, ...begripDistractors(b).map(x => x.begrip)],
+      explain: begripUitleg(b)
     }),
     voorbeeld: b => ({
       label: "Bij welk begrip past dit voorbeeld?",
       prompt: b.voorbeeld, longPrompt: true,
       correct: b.begrip,
-      options: [b.begrip, ...begripDistractors(b).map(x => x.begrip)]
+      options: [b.begrip, ...begripDistractors(b).map(x => x.begrip)],
+      explain: begripUitleg(b)
     })
   };
 
@@ -114,6 +120,11 @@
     return s;
   }
 
+  function verbandUitleg(woord, verbandId) {
+    const v = verbandById[verbandId];
+    return `${cap(woord)} = ${v.label}: ${lc(v.uitleg)}`;
+  }
+
   const SIGNAAL_VRAGEN = {
     verband: w => {
       const ids = woordVerbanden.get(w);
@@ -124,6 +135,7 @@
         label: "Welk verband geeft dit signaalwoord aan?",
         prompt: w, correct: goed, options: [goed, ...fout],
         hint: `"${w}" = ${window.SIGNAAL_UITLEG[w]}`,
+        explain: verbandUitleg(w, ids[0]),
         // alle verbanden waar het woord bij hoort tellen als goed
         alsoCorrect: ids.map(id => verbandById[id].label)
       };
@@ -135,14 +147,16 @@
       return {
         label: "Welk signaalwoord hoort bij dit verband?",
         prompt: cap(v.label), correct: w, options: [w, ...fout],
-        hint: v.uitleg
+        hint: v.uitleg,
+        explain: verbandUitleg(w, v.id)
       };
     },
     zinnen: z => ({
       label: "Welk signaalwoord past op de puntjes?",
       prompt: z.zin, longPrompt: true, gap: true,
       correct: z.goed, options: [z.goed, ...z.fout],
-      hint: `Welk verband zit er tussen de zinsdelen? ${verbandById[z.verband].uitleg}`
+      hint: `Welk verband zit er tussen de zinsdelen? ${verbandById[z.verband].uitleg}`,
+      explain: verbandUitleg(z.goed, z.verband)
     })
   };
 
@@ -397,7 +411,8 @@
     else sound.correct();
 
     render();
-    s.advanceId = setTimeout(advance, s.lastResult === "wrong" ? 2600 : 900);
+    // goed: vanzelf verder. Fout: blijven staan tot er op Volgende (of Enter) gedrukt wordt.
+    if (s.lastResult === "correct") s.advanceId = setTimeout(advance, 900);
   }
 
   function advance() {
@@ -457,7 +472,12 @@
 
     let msg = "";
     if (s.lastResult === "correct") msg = esc(s.message);
-    else if (s.lastResult === "wrong") msg = `Bijna! Het juiste antwoord is: <u>${esc(q.correct)}</u>. Komt later terug.`;
+    else if (s.lastResult === "wrong") {
+      msg = q.longAnswers
+        ? "Bijna! Het goede antwoord is groen gemaakt. Komt later terug."
+        : `Bijna! Het juiste antwoord is: <u>${esc(q.correct)}</u>. Komt later terug.`;
+      if (q.explain) msg += `<div class="explain">💡 ${esc(q.explain)}</div>`;
+    }
 
     const promptHtml = q.gap
       ? esc(q.prompt).replace("___", `<span class="gap">&nbsp;</span>`)
@@ -475,7 +495,9 @@
     }).join("");
 
     const lastOne = s.queue.length === 1 && s.lastResult !== "wrong";
-    const nextLabel = s.answered ? (lastOne ? "Nu naar score ➜" : "Nu al verder ➜") : "Volgende ➜";
+    const nextLabel = !s.answered ? "Volgende ➜"
+      : s.lastResult === "wrong" ? "Volgende ➜"
+      : lastOne ? "Nu naar score ➜" : "Nu al verder ➜";
 
     root.innerHTML = `
       ${headerHtml(`<div class="player-badge">👤 ${esc(app.playerName)} · ${esc(pack.name)}</div>
@@ -499,14 +521,14 @@
           <div class="prompt-label">${esc(q.label)}</div>
           <div class="prompt-word ${q.longPrompt ? "long" : ""}">${promptHtml}</div>
           ${q.hint ? `<button class="hint-btn ${s.hintShown ? "active" : ""}" data-action="hint" title="Hint (H)" aria-label="Hint tonen">?</button>` : ""}
-          ${q.hint && s.hintShown ? `<div class="hint-box">💡 ${esc(q.hint)}</div>` : ""}
+          ${q.hint && s.hintShown && !s.answered ? `<div class="hint-box">💡 ${esc(q.hint)}</div>` : ""}
         </div>
       </div>
       <div class="choice-grid ${longAnswers ? "long" : ""}">${choices}</div>
       <div class="hint">Klik op een antwoord of druk op 1, 2, 3 of 4 · Enter = verder${q.hint ? " · ? of H = hint" : ""}</div>
       <div class="footer">
         <div class="score"><span>Onder de knie</span> <b>${s.mastered.size} / ${pack.questions.length}</b></div>
-        <button class="next-btn" data-action="next" ${s.answered ? "" : "disabled"}>${nextLabel}</button>
+        <button class="next-btn ${s.lastResult === "wrong" ? "attention" : ""}" data-action="next" ${s.answered ? "" : "disabled"}>${nextLabel}</button>
       </div>
       ${app.dialog ? `
         <div class="dialog-overlay" data-action="close-dialog">

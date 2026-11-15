@@ -176,3 +176,8 @@ body {
 .hint-btn:hover { transform: translateY(-1px); background: #ffffff4d; }
 .hint-btn.active { background: #fff; color: var(--teal-dark); }
 .hint-box { position: relative; max-width: 470px; margin: 18px auto 0; padding: 10px 16px; background: #ffffff2e; border-radius: 14px; font-size: 15px; font-weight: 700; line-height: 1.4; animation: .3s dictFade; }
+
+/* ---------- uitleg bij fout antwoord ---------- */
+.msg .explain { max-width: 560px; margin: 8px auto 4px; padding: 11px 16px; background: #ffefef; border: 2px solid #ffd0d8; border-radius: 14px; color: var(--navy); font-family: Nunito, sans-serif; font-size: 15px; font-weight: 700; line-height: 1.45; animation: .3s dictFade; }
+.next-btn.attention { animation: nudge 1.6s ease-in-out .6s infinite; }
+@keyframes nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
