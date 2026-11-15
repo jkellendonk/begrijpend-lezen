@@ -184,3 +184,4 @@ body {
 
 /* signaalwoord vetgedrukt in de zin */
 .prompt-word .sw { color: var(--gold); font-weight: 800; }
+.msg .explain .zin-uitleg { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #ffc2cc; font-weight: 600; }

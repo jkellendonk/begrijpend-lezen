@@ -529,7 +529,11 @@
       msg = q.longAnswers
         ? "Bijna! Het goede antwoord is groen gemaakt. Komt later terug."
         : `Bijna! Het juiste antwoord is: <u>${esc(q.correct)}</u>. Komt later terug.`;
-      if (q.explain) msg += `<div class="explain">💡 ${esc(q.explain)}</div>`;
+      if (q.explain) {
+        msg += `<div class="explain">💡 ${esc(q.explain)}` +
+          (q.zinUitleg ? `<div class="zin-uitleg">In deze zin: ${esc(q.zinUitleg)}</div>` : "") +
+          `</div>`;
+      }
     }
 
     const promptHtml = q.promptHtml
@@ -580,7 +584,7 @@
         </div>
       </div>
       <div class="choice-grid ${longAnswers ? "long" : ""}">${choices}</div>
-      <div class="hint">Klik op een antwoord of druk op 1, 2, 3 of 4 · Enter = verder${q.hint ? " · ? of H = hint" : ""}</div>
+      <div class="hint">Klik op een antwoord of druk op 1, 2, 3 of 4 · Enter of spatie = verder${q.hint ? " · ? of H = hint" : ""}</div>
       <div class="footer">
         <div class="score"><span>Onder de knie</span> <b>${s.mastered.size} / ${pack.questions.length}</b></div>
         <button class="next-btn ${s.lastResult === "wrong" ? "attention" : ""}" data-action="next" ${s.answered ? "" : "disabled"}>${nextLabel}</button>
@@ -748,7 +752,7 @@
       }
       if (["1", "2", "3", "4"].includes(e.key)) { choose(Number(e.key) - 1); return; }
       if (e.key === "h" || e.key === "H" || e.key === "?") { toggleHint(); return; }
-      if (e.key === "Enter" && app.quiz.answered) { e.preventDefault(); advance(); }
+      if ((e.key === "Enter" || e.key === " ") && app.quiz.answered) { e.preventDefault(); advance(); }
     } else if (app.screen === "result" && e.key === "Enter") {
       e.preventDefault();
       startQuiz();
